@@ -1,8 +1,8 @@
 export type SiteConfig = typeof siteConfig;
 
 export const siteConfig = {
-  name: "Next.js + HeroUI",
-  description: "Make beautiful websites regardless of your design experience.",
+  name: "Voice Demo Client for x402apis",
+  description: "Pay Per Use AI Voice API",
   navItems: [
     {
       label: "Home",
