@@ -5,7 +5,7 @@
  */
 
 export class AudioPlayer {
-    private audioContext: AudioContext;
+    private audioContext: AudioContext | undefined;
     private audioQueue: ArrayBuffer[] = [];
     private isPlaying = false;
     private sourceNode: AudioBufferSourceNode | null = null;
@@ -25,7 +25,7 @@ export class AudioPlayer {
             console.log(`🔊 AudioPlayer: AudioContext initialized with sampleRate: ${this.audioContext.sampleRate}Hz`);
             console.log(`🔊 AudioPlayer: AudioContext state: ${this.audioContext.state}`);
         } else {
-            // ... rest of constructor
+            this.audioContext = undefined
         }
     }
 
@@ -57,6 +57,8 @@ export class AudioPlayer {
      * Creates a single continuous AudioBuffer from all data in the queue.
      */
     private createContinuousBuffer(): AudioBuffer | null {
+        if (!this.audioContext) return;
+
         if (this.audioQueue.length === 0) {
             console.log("🔊 AudioPlayer: Queue is empty, cannot create continuous buffer.");
             return null;
