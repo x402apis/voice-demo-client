@@ -57,7 +57,7 @@ export class AudioPlayer {
      * Creates a single continuous AudioBuffer from all data in the queue.
      */
     private createContinuousBuffer(): AudioBuffer | null {
-        if (!this.audioContext) return;
+        if (!this.audioContext) return null;
 
         if (this.audioQueue.length === 0) {
             console.log("🔊 AudioPlayer: Queue is empty, cannot create continuous buffer.");
