@@ -316,7 +316,7 @@ export const VoiceAgent = () => {
           className="w-full font-bold"
           isDisabled={!walletContext.connected}
         >
-          Start 3-Minute Call (~$0.10 in SOL)
+          Start 3-Minute Call (~$0.0001 in SOL)
         </Button>
       ) : (
         <div className="space-y-4">
