@@ -2,74 +2,91 @@
 
 import { useState, useRef, useCallback } from 'react';
 
-/**
- * A custom React hook to manage microphone recording using the MediaRecorder API.
- * It provides functions to start and stop recording and exposes the current recording state.
- */
 export const useMicrophone = () => {
     const [isRecording, setIsRecording] = useState(false);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
 
-    /**
-     * Requests microphone access and starts recording.
-     * The audio is streamed out in chunks via the onDataAvailable callback.
-     * @param onDataAvailable A callback function that receives audio chunks (as Blobs) periodically.
-     */
-    const startRecording = useCallback(async (onDataAvailable: (data: Blob) => void) => {
-        // Prevent starting a new recording if one is already in progress.
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    const startRecording = useCallback(async (onDataAvailable: (data: ArrayBuffer) => void) => {
+        if (isRecording) {
             console.warn("Microphone is already recording.");
             return;
         }
 
         try {
-            // Request access to the user's microphone.
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            // Create a new MediaRecorder instance with the stream.
-            const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current = recorder;
-
-            // Event handler for when a chunk of audio data is available.
-            recorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    // Pass the audio chunk to the provided callback.
-                    onDataAvailable(event.data);
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: 48000,
+                    echoCancellation: true,
+                    noiseSuppression: true,
                 }
+            });
+            streamRef.current = stream;
+
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioContextRef.current = audioContext;
+
+            const source = audioContext.createMediaStreamSource(stream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            // THIS IS WHERE processor.onaudioprocess IS
+            processor.onaudioprocess = (event) => {
+                const inputData = event.inputBuffer.getChannelData(0);
+                const inputSampleRate = audioContext.sampleRate;
+                const outputSampleRate = 16000;
+
+                // Fixed downsampling
+                const ratio = outputSampleRate / inputSampleRate;
+                const downsampledLength = Math.floor(inputData.length * ratio);
+                const downsampledData = new Float32Array(downsampledLength);
+
+                for (let i = 0; i < downsampledLength; i++) {
+                    const srcIndex = Math.floor(i / ratio);
+                    downsampledData[i] = inputData[srcIndex];
+                }
+
+                // Convert to Int16 PCM
+                const int16Data = new Int16Array(downsampledLength);
+                for (let i = 0; i < downsampledLength; i++) {
+                    const s = Math.max(-1, Math.min(1, downsampledData[i]));
+                    int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                onDataAvailable(int16Data.buffer);
             };
 
-            // Event handler for when the recording officially starts.
-            recorder.onstart = () => {
-                setIsRecording(true);
-            };
+            source.connect(processor);
+            processor.connect(audioContext.destination);
 
-            // Event handler for when the recording stops.
-            recorder.onstop = () => {
-                setIsRecording(false);
-                // Clean up by stopping all tracks on the stream.
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            // Start recording and slice the audio into chunks every 250ms.
-            // This is the key to "streaming" the audio.
-            recorder.start(250);
+            setIsRecording(true);
 
         } catch (error) {
             console.error("Error accessing microphone:", error);
-            // Provide a user-friendly error message.
-            throw new Error("Microphone access was denied. Please allow access in your browser settings.");
+            throw new Error("Microphone access was denied.");
         }
-    }, []);
+    }, [isRecording]);
 
-    /**
-     * Stops the current recording session.
-     */
     const stopRecording = useCallback(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
+        if (processorRef.current) {
+            processorRef.current.disconnect();
+            processorRef.current = null;
         }
+
+        if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+
+        setIsRecording(false);
     }, []);
 
-    // Expose the recording state and control functions to the component.
     return { isRecording, startRecording, stopRecording };
 };

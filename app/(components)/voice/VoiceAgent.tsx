@@ -2,15 +2,15 @@
 
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react"; // Added useCallback
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@heroui/button";
 import { WalletConnector } from "../wallet/WalletConnector";
 import { X402Router } from "@x402apis/client";
 import { BrowserWalletSigner } from "@/lib/wallet-signer";
 import { useMicrophone } from "@/app/(hooks)/useMicrophone";
-import { AudioPlayer } from "@/lib/audio";
 import { Transcript } from "./Transcript";
+import { AudioPlayer } from "@/lib/audio";
 
 // --- Type Definitions ---
 interface TranscriptMessage {
@@ -19,40 +19,51 @@ interface TranscriptMessage {
 }
 
 // --- Deepgram Agent Configuration ---
-// This function creates the configuration object required by the Deepgram Agent.
+// in VoiceAgent.tsx
+
 // --- Deepgram Agent Configuration ---
-const getDeepgramConfig = (companyName: string) => ({
-  type: "Settings",
-  audio: {
-    input: { encoding: "linear16", sample_rate: 16000 },
-    output: {
-      encoding: "linear16",
-      sample_rate: 24000,
-      container: "none",
-    },
-  },
-  agent: {
-    language: "en",
-    listen: {
-      provider: {
-        type: "deepgram",
-        model: "nova-3",
-        smart_format: true,
+const getDeepgramConfig = (companyName: string) => {
+  const config = {
+    type: "Settings",
+    audio: {
+      input: { encoding: "linear16", sample_rate: 16000 },
+      output: {
+        encoding: "linear16",
+        // --- THE FIX ---
+        // Change this to match what Deepgram is actually sending.
+        sample_rate: 16000,
+        container: "none",
       },
     },
-    think: {
-      provider: { type: "open_ai", model: "gpt-4o-mini" },
-      prompt: `You are a friendly and helpful AI assistant for ${companyName}. Your goal is to answer questions concisely. Keep your responses under 30 words.`,
-    },
-    speak: {
-      provider: {
-        type: "deepgram",
-        model: "aura-2-callista-en",
+    agent: {
+      language: "en",
+      listen: {
+        provider: {
+          type: "deepgram",
+          model: "nova-3",
+        },
       },
+      think: {
+        provider: { type: "open_ai", model: "gpt-4o-mini" },
+        prompt: `You are a friendly and helpful AI assistant for ${companyName}. Your goal is to answer questions concisely. Keep your responses under 30 words.`,
+      },
+      speak: {
+        provider: {
+          type: "deepgram",
+          model: "aura-2-callista-en",
+        },
+      },
+      greeting: `Hello! Thank you for calling ${companyName}. How can I assist you today?`,
     },
-    greeting: `Hello! Thank you for calling ${companyName}. How can I assist you today?`,
-  },
-});
+  };
+  console.log(
+    "🔊 CLIENT: Deepgram Agent Config generated:",
+    JSON.stringify(config, null, 2)
+  );
+  return config;
+};
+
+// ... rest of the VoiceAgent.tsx file remains the same ...
 
 // --- Main Component ---
 export const VoiceAgent = () => {
@@ -71,18 +82,38 @@ export const VoiceAgent = () => {
 
   // Initialize the AudioPlayer once when the component mounts.
   useEffect(() => {
-    audioPlayerRef.current = new AudioPlayer();
+    console.log("🔊 CLIENT: Initializing AudioPlayer...");
+    audioPlayerRef.current = new AudioPlayer(
+      getDeepgramConfig("").audio.output.sample_rate // Pass the expected sample rate
+    );
+
     // Cleanup function to stop everything when the component unmounts.
     return () => {
+      console.log(
+        "🔊 CLIENT: Component unmounting, ending call and cleaning up."
+      );
       endCall();
     };
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
 
-  // --- Core Functions ---
+  // Use useCallback for stable function references
+  const endCall = useCallback(() => {
+    console.log("🔊 CLIENT: endCall triggered.");
+    setIsCalling(false);
+    stopRecording();
+    audioPlayerRef.current?.stop();
+    if (socketRef.current) {
+      console.log("🔊 CLIENT: Closing WebSocket connection.");
+      socketRef.current.close(1000, "User ended the call");
+      socketRef.current = null;
+    }
+    setStatus("Ready to call");
+  }, [stopRecording]); // Only re-create if stopRecording changes
 
   const startCall = async () => {
     if (!walletContext.connected || !walletContext.publicKey) {
       setStatus("Please connect your wallet first.");
+      console.warn("🔊 CLIENT: Wallet not connected, cannot start call.");
       return;
     }
 
@@ -90,9 +121,8 @@ export const VoiceAgent = () => {
     setStatus("Purchasing session via x402...");
     setTranscript([]);
 
-    // CRITICAL: Stop any existing recording first
     if (isRecording) {
-      console.log("⚠️ CLIENT: Stopping existing recording before new call");
+      console.log("⚠️ CLIENT: Stopping existing recording before new call.");
       stopRecording();
     }
 
@@ -107,80 +137,120 @@ export const VoiceAgent = () => {
           "https://api.mainnet-beta.solana.com",
       });
 
+      console.log("🔊 CLIENT: Calling x402 router for session...");
       const response = await router.call("deepgram.agent.createSession", {
         userIdentifier: walletContext.publicKey.toBase58(),
       });
 
       const { sessionToken, websocketUrl } = response.data;
-      console.log("✅ CLIENT: Session created, connecting to:", websocketUrl);
+      console.log("✅ CLIENT: Session created.");
+      console.log(`   WebSocket URL: ${websocketUrl}`);
+      console.log(
+        `   Session Token (first 10 chars): ${sessionToken.substring(0, 10)}...`
+      );
       setStatus("Connecting to agent...");
 
       const ws = new WebSocket(`${websocketUrl}?token=${sessionToken}`);
       socketRef.current = ws;
       ws.binaryType = "arraybuffer";
+      console.log(
+        "🔊 CLIENT: WebSocket instance created, binaryType set to ArrayBuffer."
+      );
 
       ws.onopen = () => {
-        console.log("✅ CLIENT: WebSocket connected");
-        console.log("📊 CLIENT: WebSocket readyState:", ws.readyState);
+        console.log("✅ CLIENT: WebSocket connected to proxy.");
         setStatus("Connected! Initializing agent...");
         setIsCalling(true);
-
-        // Send Settings
         const agentConfig = getDeepgramConfig("x402 Demo");
-        console.log("🔧 CLIENT: Preparing to send Settings");
-        console.log(
-          "📄 CLIENT: Settings config:",
-          JSON.stringify(agentConfig, null, 2)
-        );
-
-        try {
-          ws.send(JSON.stringify(agentConfig));
-          console.log("✅ CLIENT: Settings sent successfully");
-        } catch (error) {
-          console.error("❌ CLIENT: Failed to send Settings:", error);
-        }
+        ws.send(JSON.stringify(agentConfig));
+        console.log("✅ CLIENT: Deepgram Agent Settings sent to proxy.");
       };
+
+      // in VoiceAgent.tsx, inside startCall()
 
       ws.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-          console.log(
-            "🔊 CLIENT: Received audio data, length:",
-            event.data.byteLength
-          );
-          audioPlayerRef.current?.addAudio(event.data);
-        } else {
+        let isAudio = false;
+        let messageData = event.data;
+
+        // --- NEW LOGIC: Check ArrayBuffer for hidden JSON ---
+        if (messageData instanceof ArrayBuffer) {
+          // Assume ArrayBuffer is audio, but try to parse as JSON first
           try {
-            const message = JSON.parse(event.data);
-            console.log("📩 CLIENT: Received message:", message.type);
+            // Decode ArrayBuffer to string
+            const messageString = new TextDecoder("utf-8").decode(messageData);
+            const message = JSON.parse(messageString);
 
-            if (message.type === "SettingsApplied" && !isRecording) {
-              console.log(
-                "✅ CLIENT: SettingsApplied received, starting microphone"
-              );
-              setStatus("Agent ready! Starting microphone...");
-              handleToggleRecording();
-            }
-
-            if (message.type === "UserTranscript" && message.transcript) {
-              setTranscript((prev) => [
-                ...prev,
-                { source: "user", text: message.transcript },
-              ]);
-            } else if (
-              message.type === "AgentTranscript" &&
-              message.transcript
-            ) {
-              setTranscript((prev) => [
-                ...prev,
-                { source: "agent", text: message.transcript },
-              ]);
-            }
+            // Successfully parsed JSON that arrived in a binary frame
+            messageData = message; // Use the parsed object for the rest of the handler
+            console.log(
+              "🔊 CLIENT: Received JSON message (was binary):",
+              message.type,
+              message
+            );
           } catch (e) {
-            console.warn("⚠️ CLIENT: Received non-JSON message:", event.data);
+            // Failed to parse as JSON, so it must be audio data
+            isAudio = true;
+            console.log(
+              `🔊 CLIENT: Received binary audio chunk (${messageData.byteLength} bytes)`
+            );
+          }
+        } else {
+          // Already a string, so parse as JSON (standard path)
+          try {
+            messageData = JSON.parse(messageData);
+            console.log(
+              "🔊 CLIENT: Received JSON message (was text):",
+              messageData.type,
+              messageData
+            );
+          } catch (e) {
+            console.warn(
+              "⚠️ CLIENT: Received unparsable text message:",
+              event.data
+            );
+            return;
           }
         }
-      };
 
+        // --- Processing Logic ---
+        if (isAudio) {
+          // Only process if explicitly identified as audio
+          audioPlayerRef.current?.addAudio(messageData as ArrayBuffer);
+          return;
+        }
+
+        // Process JSON control messages
+        const message = messageData as any;
+
+        if (message.type === "SettingsApplied") {
+          console.log(
+            "✅ CLIENT: Deepgram SettingsApplied received. Output details:",
+            message.response
+          );
+          handleToggleRecording();
+        }
+
+        if (message.type === "UserStartedSpeaking") {
+          console.log(
+            "🎤 CLIENT: User started speaking, stopping AI audio playback."
+          );
+          audioPlayerRef.current?.stop();
+        }
+
+        if (message.type === "UserTranscript" && message.transcript) {
+          setTranscript((prev) => [
+            ...prev,
+            { source: "user", text: message.transcript },
+          ]);
+          console.log("🗣️ CLIENT: User Transcript:", message.transcript);
+        } else if (message.type === "AgentTranscript" && message.transcript) {
+          setTranscript((prev) => [
+            ...prev,
+            { source: "agent", text: message.transcript },
+          ]);
+          console.log("🤖 CLIENT: Agent Transcript:", message.transcript);
+        }
+      };
       ws.onclose = (event) => {
         console.log(
           "🔌 CLIENT: WebSocket closed, code:",
@@ -189,15 +259,13 @@ export const VoiceAgent = () => {
           event.reason
         );
         setStatus(`Call ended: ${event.reason || "Connection closed"}`);
-        setIsCalling(false);
-        stopRecording();
+        endCall();
       };
 
       ws.onerror = (error) => {
         console.error("❌ CLIENT: WebSocket error:", error);
         setStatus("An error occurred during the call.");
-        setIsCalling(false);
-        stopRecording();
+        endCall();
       };
     } catch (error) {
       const errorMessage =
@@ -206,29 +274,25 @@ export const VoiceAgent = () => {
       setStatus(`Error: ${errorMessage}`);
     }
   };
-  const endCall = () => {
-    if (socketRef.current) {
-      socketRef.current.close(1000, "User ended the call");
-      socketRef.current = null;
-    }
-    stopRecording();
-    audioPlayerRef.current?.stop();
-    setIsCalling(false);
-  };
 
   const handleToggleRecording = () => {
     if (isRecording) {
+      console.log("🎤 CLIENT: Stopping microphone recording.");
       stopRecording();
     } else {
+      console.log("🎤 CLIENT: Starting microphone recording.");
       startRecording((data) => {
         if (socketRef.current?.readyState === WebSocket.OPEN) {
           socketRef.current.send(data);
         }
-      }).catch((err) => setStatus(err.message));
+      }).catch((err) => {
+        setStatus(err.message);
+        console.error("❌ CLIENT: Microphone start error:", err.message);
+      });
     }
   };
 
-  // --- Render Logic ---
+  // --- Render Logic (No changes needed here) ---
   return (
     <div className="w-full max-w-md p-8 border-2 border-neutral-800 bg-neutral-900/50 rounded-lg space-y-6 flex flex-col">
       <div>
