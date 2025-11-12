@@ -304,8 +304,6 @@ export const VoiceAgent = () => {
 
       <WalletConnector />
 
-      <Transcript messages={transcript} />
-
       <div className="p-4 bg-neutral-800 rounded-md min-h-[48px] text-center">
         <p className="text-sm font-mono">{status}</p>
       </div>
