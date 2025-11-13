@@ -140,8 +140,10 @@ export default function Home() {
           Experience a real-time AI conversation, paid per-session with Solana.
         </h2>
         <h3 className="text-xl text-neutral-600 mt-2">
-          This is experimental and in beta. If any issues with the Parallax
-          model please try OpenAI for demo purposes
+          This is experimental and in beta. If any{" "}
+          <span className="text-red-300">errors</span> or
+          <span className="text-warning-300"> latency</span> issues with the
+          Parallax model please try OpenAI for demo purposes
         </h3>
       </div>
 
