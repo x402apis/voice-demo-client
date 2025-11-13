@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react"; // Added useCallback
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@heroui/button";
 import { WalletConnector } from "../wallet/WalletConnector";
@@ -18,19 +18,32 @@ interface TranscriptMessage {
   text: string;
 }
 
-// --- Deepgram Agent Configuration ---
-// in VoiceAgent.tsx
+// --- NEW: Define the LLM options for the dropdown ---
+const llmOptions = [
+  {
+    label: "Parallax: Qwen 235B",
+    value: JSON.stringify({
+      provider: "parallax",
+      model: "qwen/qwen3-235b-instruct-fp8",
+    }),
+  },
+  {
+    label: "OpenAI: GPT-4o Mini",
+    value: JSON.stringify({ provider: "open_ai", model: "gpt-4o-mini" }),
+  },
+];
 
-// --- Deepgram Agent Configuration ---
-const getDeepgramConfig = (companyName: string) => {
+// --- MODIFIED: Deepgram Agent Configuration is now dynamic ---
+const getDeepgramConfig = (
+  companyName: string,
+  llm: { provider: string; model: string }
+) => {
   const config = {
     type: "Settings",
     audio: {
       input: { encoding: "linear16", sample_rate: 16000 },
       output: {
         encoding: "linear16",
-        // --- THE FIX ---
-        // Change this to match what Deepgram is actually sending.
         sample_rate: 16000,
         container: "none",
       },
@@ -44,7 +57,10 @@ const getDeepgramConfig = (companyName: string) => {
         },
       },
       think: {
-        provider: { type: "open_ai", model: "gpt-4o-mini" },
+        provider: {
+          type: llm.provider, // This will be "open_ai" or "parallax"
+          model: llm.model, // The specific model ID
+        },
         prompt: `You are a friendly and helpful AI assistant for ${companyName}. Your goal is to answer questions concisely. Keep your responses under 30 words.`,
       },
       speak: {
@@ -63,14 +79,14 @@ const getDeepgramConfig = (companyName: string) => {
   return config;
 };
 
-// ... rest of the VoiceAgent.tsx file remains the same ...
-
 // --- Main Component ---
 export const VoiceAgent = () => {
   // --- State Management ---
   const [isCalling, setIsCalling] = useState(false);
   const [status, setStatus] = useState("Ready to call");
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
+  // --- NEW: State to manage the selected LLM from the dropdown ---
+  const [selectedLlm, setSelectedLlm] = useState(llmOptions[0].value);
 
   // --- Refs for persistent objects ---
   const socketRef = useRef<WebSocket | null>(null);
@@ -83,9 +99,8 @@ export const VoiceAgent = () => {
   // Initialize the AudioPlayer once when the component mounts.
   useEffect(() => {
     console.log("🔊 CLIENT: Initializing AudioPlayer...");
-    audioPlayerRef.current = new AudioPlayer(
-      getDeepgramConfig("").audio.output.sample_rate // Pass the expected sample rate
-    );
+    // The sample rate is fixed at 16000, so we can hardcode it here.
+    audioPlayerRef.current = new AudioPlayer(16000);
 
     // Cleanup function to stop everything when the component unmounts.
     return () => {
@@ -138,7 +153,7 @@ export const VoiceAgent = () => {
       });
 
       console.log("🔊 CLIENT: Calling x402 router for session...");
-      const response = await router.call("deepgram.agent.createSession", {
+      const response = await router.call("deepgram.agent.parallaxSession", {
         userIdentifier: walletContext.publicKey.toBase58(),
       });
 
@@ -161,46 +176,41 @@ export const VoiceAgent = () => {
         console.log("✅ CLIENT: WebSocket connected to proxy.");
         setStatus("Connected! Initializing agent...");
         setIsCalling(true);
-        const agentConfig = getDeepgramConfig("x402 Demo");
+
+        // --- MODIFIED: Use the state to generate the correct config ---
+        const llmInfo = JSON.parse(selectedLlm);
+        const agentConfig = getDeepgramConfig("x402 Demo", llmInfo);
+
         ws.send(JSON.stringify(agentConfig));
         console.log("✅ CLIENT: Deepgram Agent Settings sent to proxy.");
       };
-
-      // in VoiceAgent.tsx, inside startCall()
 
       ws.onmessage = (event) => {
         let isAudio = false;
         let messageData = event.data;
 
-        // --- NEW LOGIC: Check ArrayBuffer for hidden JSON ---
         if (messageData instanceof ArrayBuffer) {
-          // Assume ArrayBuffer is audio, but try to parse as JSON first
           try {
-            // Decode ArrayBuffer to string
             const messageString = new TextDecoder("utf-8").decode(messageData);
             const message = JSON.parse(messageString);
-
-            // Successfully parsed JSON that arrived in a binary frame
-            messageData = message; // Use the parsed object for the rest of the handler
+            messageData = message;
             console.log(
               "🔊 CLIENT: Received JSON message (was binary):",
               message.type,
               message
             );
           } catch (e) {
-            // Failed to parse as JSON, so it must be audio data
             isAudio = true;
             console.log(
-              `🔊 CLIENT: Received binary audio chunk (${messageData.byteLength} bytes)`
+              `🔊 CLIENT: Received binary audio chunk (${(messageData as ArrayBuffer).byteLength} bytes)`
             );
           }
         } else {
-          // Already a string, so parse as JSON (standard path)
           try {
-            messageData = JSON.parse(messageData);
+            messageData = JSON.parse(messageData as string);
             console.log(
               "🔊 CLIENT: Received JSON message (was text):",
-              messageData.type,
+              (messageData as any).type,
               messageData
             );
           } catch (e) {
@@ -212,16 +222,12 @@ export const VoiceAgent = () => {
           }
         }
 
-        // --- Processing Logic ---
         if (isAudio) {
-          // Only process if explicitly identified as audio
           audioPlayerRef.current?.addAudio(messageData as ArrayBuffer);
           return;
         }
 
-        // Process JSON control messages
         const message = messageData as any;
-
         if (message.type === "SettingsApplied") {
           console.log(
             "✅ CLIENT: Deepgram SettingsApplied received. Output details:",
@@ -292,7 +298,6 @@ export const VoiceAgent = () => {
     }
   };
 
-  // --- Render Logic (No changes needed here) ---
   return (
     <div className="w-full max-w-md p-8 border-2 border-neutral-800 bg-neutral-900/50 rounded-lg space-y-6 flex flex-col">
       <div>
@@ -309,15 +314,40 @@ export const VoiceAgent = () => {
       </div>
 
       {!isCalling ? (
-        <Button
-          color="primary"
-          size="lg"
-          onPress={startCall}
-          className="w-full font-bold"
-          isDisabled={!walletContext.connected}
-        >
-          Start 3-Minute Call (~$0.0001 in SOL)
-        </Button>
+        // --- MODIFIED: Added a fragment to wrap the new dropdown and the existing button ---
+        <>
+          <div className="space-y-2">
+            <label
+              htmlFor="llm-select"
+              className="block text-sm font-medium text-neutral-300"
+            >
+              Choose AI Model
+            </label>
+            <select
+              id="llm-select"
+              value={selectedLlm}
+              onChange={(e) => setSelectedLlm(e.target.value)}
+              disabled={isCalling}
+              className="w-full p-2 bg-neutral-800 border border-neutral-700 rounded-md text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            >
+              {llmOptions.map((option) => (
+                <option key={option.label} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Button
+            color="primary"
+            size="lg"
+            onPress={startCall}
+            className="w-full font-bold"
+            isDisabled={!walletContext.connected}
+          >
+            Start 3-Minute Call (~$0.0001 in SOL)
+          </Button>
+        </>
       ) : (
         <div className="space-y-4">
           <Button
