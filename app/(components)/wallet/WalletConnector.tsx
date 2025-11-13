@@ -13,7 +13,7 @@ export const WalletConnector = () => {
 
   // If the user is not connected, show the standard connection button.
   if (!connected) {
-    return <WalletMultiButton />;
+    return <WalletMultiButton style={{ margin: "0 auto" }} />;
   }
 
   // If the user IS connected, show their address and a disconnect button.
