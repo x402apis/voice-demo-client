@@ -3,7 +3,15 @@
 "use client";
 
 import { VoiceAgent } from "@/app/(components)/voice/VoiceAgent";
-import { Wallet, ArrowRight, Server, Cloud, MicVocal } from "lucide-react";
+import {
+  Wallet,
+  ArrowRight,
+  Server,
+  Cloud,
+  MicVocal,
+  Building2,
+  Phone,
+} from "lucide-react";
 
 /**
  * A new component to visually explain the x402 process flow.
@@ -70,13 +78,66 @@ const HowItWorks = () => {
   );
 };
 
+/**
+ * Use case section for SaaS applications
+ */
+const UseCaseSection = () => {
+  return (
+    <section className="w-full max-w-5xl mt-24">
+      <div className="p-8 border-2 border-blue-800/50 bg-blue-950/30 rounded-lg">
+        <div className="flex items-start gap-6">
+          <div className="flex-shrink-0">
+            <Building2 className="h-12 w-12 text-blue-400" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-2xl font-bold mb-3">
+              Perfect for SaaS Voice AI Services
+            </h3>
+            <p className="text-neutral-300 mb-4">
+              x402 enables SaaS platforms to offer pay-per-call voice AI to
+              their customers without upfront subscriptions. Services like{" "}
+              <a
+                href="https://instantcallai.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                InstantCallAI
+              </a>{" "}
+              can use this protocol to provide AI backup systems to home service
+              contractors—auto repair shops, HVAC companies, and plumbers.
+              Allowing them to pay only for the calls they actually receive.
+            </p>
+            <div className="flex items-start gap-3 mt-6 p-4 bg-blue-900/20 rounded border border-blue-800/30">
+              <Phone className="h-6 w-6 text-blue-400 flex-shrink-0 mt-1" />
+              <div>
+                <h4 className="font-semibold text-blue-300 mb-1">
+                  Example Use Case
+                </h4>
+                <p className="text-sm text-neutral-400">
+                  A plumbing company uses InstantCallAI's voice agent. Instead
+                  of a fixed monthly subscription, they pay per conversation
+                  through x402, $0.05 per call handled. When a customer calls
+                  after hours asking about a burst pipe emergency, the AI
+                  answers, books the appointment, and the plumber only pays for
+                  that single interaction.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 export default function Home() {
   return (
     <section className="flex flex-col items-center justify-center gap-4 py-8 md:py-10">
       <div className="inline-block max-w-lg text-center justify-center mb-8">
         <h1 className="text-4xl font-bold">Parallax x402 Voice Agent (BETA)</h1>
         <h2 className="text-xl text-neutral-400 mt-2">
-          Experience a real-time AI conversation, paid per-session with Solana .
+          Experience a real-time AI conversation, paid per-session with Solana.
         </h2>
         <h3 className="text-xl text-neutral-600 mt-2">
           This is experimental and in beta. If any issues with the Parallax
@@ -87,6 +148,8 @@ export default function Home() {
       <VoiceAgent />
 
       <HowItWorks />
+
+      <UseCaseSection />
     </section>
   );
 }
