@@ -23,6 +23,7 @@ Traditional APIs require credit cards, monthly subscriptions, and user accounts.
 ## How It Works: The End-to-End Flow
 
 This demo illustrates the power of the x402 protocol to create a decentralized marketplace for APIs.
+It leverages Parallax for the LLM layer and Deepagram for STT and TTS. OpenAI is also an option as the LLM.
 
 ![Flow Diagram](./docs/flow-diagram.png)
 _(**Note:** You can create a simple diagram and add it to a `/docs` folder.)_
