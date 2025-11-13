@@ -153,7 +153,7 @@ export const VoiceAgent = () => {
       });
 
       console.log("🔊 CLIENT: Calling x402 router for session...");
-      const response = await router.call("deepgram.agent.parallaxSession", {
+      const response = await router.call("deepgram.agent.createSession", {
         userIdentifier: walletContext.publicKey.toBase58(),
       });
 
