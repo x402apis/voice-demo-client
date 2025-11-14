@@ -28,6 +28,13 @@ const llmOptions = [
     }),
   },
   {
+    label: "Parallax: GPT OSS 120B",
+    value: JSON.stringify({
+      provider: "parallax",
+      model: "openai/gpt-oss-120b",
+    }),
+  },
+  {
     label: "OpenAI: GPT-4o Mini",
     value: JSON.stringify({ provider: "open_ai", model: "gpt-4o-mini" }),
   },

@@ -143,7 +143,7 @@ export default function Home() {
           This is experimental and in beta. If any{" "}
           <span className="text-red-300">errors</span> or
           <span className="text-warning-300"> latency</span> issues with the
-          Parallax model please try OpenAI for demo purposes
+          Parallax model please try OpenAI for demo purposes, thank you!
         </h3>
       </div>
 
